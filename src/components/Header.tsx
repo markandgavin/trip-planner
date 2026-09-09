@@ -177,7 +177,7 @@ export function Header({
         </span>
         {s.driveCount > 0 && (
           <span className="stat">
-            <Car size={13} /> {s.driveCount} drives
+            <Car size={13} /> {s.driveCount} {s.driveCount === 1 ? 'drive' : 'drives'}
           </span>
         )}
         {s.flightCount > 0 && (

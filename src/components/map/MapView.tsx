@@ -168,17 +168,21 @@ export function MapView({
     ensureLegLayers(map, geojson);
   }, [map, styleReady, geojson]);
 
-  // Fit to the whole itinerary when the itinerary changes or on request.
-  const lastFitRef = useRef<{ itineraryId: string; token: number } | null>(null);
+  // Fit to the whole itinerary when the trip (or its stop locations) changes, or on request.
+  const stopsKey = useMemo(
+    () => `${itinerary.id}|${itinerary.stops.map((s) => `${s.id}:${s.latitude},${s.longitude}`).join(';')}`,
+    [itinerary],
+  );
+  const lastFitRef = useRef<{ stopsKey: string; token: number } | null>(null);
   useEffect(() => {
     if (!map || !containerRef.current) return;
     const b = itineraryBounds(itinerary, legs);
     if (!b) return;
     const prev = lastFitRef.current;
-    const isNewItinerary = prev?.itineraryId !== itinerary.id;
+    const isNewItinerary = prev?.stopsKey !== stopsKey;
     const isRequest = prev?.token !== fitToken;
     if (!isNewItinerary && !isRequest) return;
-    lastFitRef.current = { itineraryId: itinerary.id, token: fitToken };
+    lastFitRef.current = { stopsKey, token: fitToken };
     map.fitBounds(
       [
         [b.west, b.south],
@@ -191,7 +195,7 @@ export function MapView({
         essential: true,
       },
     );
-  }, [map, itinerary, legs, fitToken]);
+  }, [map, itinerary, legs, fitToken, stopsKey]);
 
   // Focus a stop from the itinerary panel.
   useEffect(() => {
