@@ -15,6 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Code health: typecheck, tests, production build. Stays green regardless of
+  # whether GitHub Pages is enabled for the repository.
   build:
     runs-on: ubuntu-latest
     env:
@@ -31,13 +33,14 @@ jobs:
       - run: npm run build
         env:
           VITE_BASE: /trip-planner/
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
+  # Publishes to GitHub Pages. Requires Pages to be enabled for the repository
+  # with "GitHub Actions" as the source (Settings → Pages); on a private
+  # repository that also needs a plan that includes Pages, or the repository
+  # can be made public.
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -45,5 +48,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - id: deployment
         uses: actions/deploy-pages@v4
