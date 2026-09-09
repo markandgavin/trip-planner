@@ -2,15 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import {
   CalendarDays,
   Car,
+  ChevronDown,
+  Copy,
   Download,
   FileImage,
+  FileJson,
   FileText,
   Layers,
   MapPin,
   Maximize2,
   Pencil,
   Plane,
+  Plus,
   Route,
+  Trash2,
+  Upload,
 } from 'lucide-react';
 import type { Itinerary } from '@/types/itinerary';
 import { summarize } from '@/lib/itinerary';
@@ -19,8 +25,15 @@ import { BASEMAPS, type BasemapId } from '@/services/basemaps';
 
 interface Props {
   itinerary: Itinerary;
+  trips: Itinerary[];
   basemap: BasemapId;
   exporting: boolean;
+  onSelectTrip: (id: string) => void;
+  onNewTrip: () => void;
+  onDuplicateTrip: () => void;
+  onDeleteTrip: () => void;
+  onImportTrip: (file: File) => void;
+  onExportTripJson: () => void;
   onBasemapChange: (id: BasemapId) => void;
   onFit: () => void;
   onExportPng: () => void;
@@ -50,8 +63,15 @@ function useClickOutside(open: boolean, onClose: () => void) {
 
 export function Header({
   itinerary,
+  trips,
   basemap,
   exporting,
+  onSelectTrip,
+  onNewTrip,
+  onDuplicateTrip,
+  onDeleteTrip,
+  onImportTrip,
+  onExportTripJson,
   onBasemapChange,
   onFit,
   onExportPng,
@@ -61,23 +81,91 @@ export function Header({
   const s = summarize(itinerary);
   const [exportOpen, setExportOpen] = useState(false);
   const [basemapOpen, setBasemapOpen] = useState(false);
+  const [tripsOpen, setTripsOpen] = useState(false);
   const exportRef = useClickOutside(exportOpen, () => setExportOpen(false));
   const basemapRef = useClickOutside(basemapOpen, () => setBasemapOpen(false));
+  const tripsRef = useClickOutside(tripsOpen, () => setTripsOpen(false));
+  const fileRef = useRef<HTMLInputElement>(null);
   const current = BASEMAPS.find((b) => b.id === basemap) ?? BASEMAPS[0];
 
   return (
     <header className="header">
-      <div className="header__brand">
+      <div className="header__brand menu" ref={tripsRef}>
         <div className="header__logo" aria-hidden>
           <Route size={18} strokeWidth={2.5} />
         </div>
-        <div className="header__titles">
-          <div className="header__title">{itinerary.title}</div>
-          <div className="header__subtitle">
-            {itinerary.subtitle ? `${itinerary.subtitle} · ` : ''}
-            {s.firstDate && s.lastDate ? formatDateRange(s.firstDate, s.lastDate) : ''}
+        <button
+          type="button"
+          className="trip-switch"
+          onClick={() => setTripsOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={tripsOpen}
+          title="Switch or manage trips"
+        >
+          <div className="header__titles">
+            <div className="header__title">
+              {itinerary.title} <ChevronDown size={14} className="trip-switch__chev" />
+            </div>
+            <div className="header__subtitle">
+              {itinerary.subtitle ? `${itinerary.subtitle} · ` : ''}
+              {s.firstDate && s.lastDate ? formatDateRange(s.firstDate, s.lastDate) : ''}
+            </div>
           </div>
-        </div>
+        </button>
+        {tripsOpen && (
+          <div className="menu__list menu__list--left menu__list--trips" role="menu">
+            <div className="menu__section">Your trips</div>
+            {trips.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={t.id === itinerary.id}
+                className={`menu__item ${t.id === itinerary.id ? 'menu__item--active' : ''}`}
+                onClick={() => {
+                  onSelectTrip(t.id);
+                  setTripsOpen(false);
+                }}
+              >
+                <div>
+                  <strong>{t.title}</strong>
+                  <small>
+                    {t.stops.length} {t.stops.length === 1 ? 'stop' : 'stops'}
+                    {t.stops.length ? ` · ${formatDateRange([...t.stops].sort((a, b) => a.date.localeCompare(b.date))[0].date, [...t.stops].sort((a, b) => b.date.localeCompare(a.date))[0].date)}` : ''}
+                  </small>
+                </div>
+              </button>
+            ))}
+            <div className="menu__divider" />
+            <button type="button" role="menuitem" className="menu__item" onClick={() => { setTripsOpen(false); onNewTrip(); }}>
+              <Plus size={15} /> New trip
+            </button>
+            <button type="button" role="menuitem" className="menu__item" onClick={() => { setTripsOpen(false); onDuplicateTrip(); }}>
+              <Copy size={15} /> Duplicate this trip
+            </button>
+            <button type="button" role="menuitem" className="menu__item" onClick={() => { setTripsOpen(false); fileRef.current?.click(); }}>
+              <Upload size={15} /> Import trip JSON…
+            </button>
+            <button type="button" role="menuitem" className="menu__item" onClick={() => { setTripsOpen(false); onExportTripJson(); }}>
+              <FileJson size={15} /> Download trip JSON
+            </button>
+            <div className="menu__divider" />
+            <button type="button" role="menuitem" className="menu__item menu__item--danger" onClick={() => { setTripsOpen(false); onDeleteTrip(); }}>
+              <Trash2 size={15} /> Delete this trip
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onImportTrip(f);
+                e.target.value = '';
+              }}
+            />
+          </div>
+        )}
       </div>
 
       <div className="header__stats" aria-label="Trip summary">
@@ -192,9 +280,9 @@ export function Header({
           )}
         </div>
 
-        <button type="button" className="btn btn--primary" onClick={onEdit} title="Edit itinerary data">
+        <button type="button" className="btn btn--primary" onClick={onEdit} title="Add or edit stops">
           <Pencil size={15} />
-          <span className="btn__label btn__label--hide-mobile">Edit data</span>
+          <span className="btn__label btn__label--hide-mobile">Plan trip</span>
         </button>
       </div>
     </header>

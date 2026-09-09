@@ -7,7 +7,21 @@ real road routing, flight arcs, collision-free labels, and PNG/PDF export.
 Change the itinerary data and everything — map framing, markers, routes, flight
 arcs, labels, the panel — regenerates automatically.
 
-## Run it
+## Use it
+
+The app is deployed with GitHub Pages from `.github/workflows/deploy.yml`
+(builds, typechecks, tests, then publishes `dist/`). Trips are stored in the
+browser (localStorage); use **Download trip JSON** / **Import trip JSON…** in the
+trip menu to move them between devices or share them.
+
+- **Trip menu** (click the title): switch trips, new, duplicate, import/export JSON, delete.
+- **Plan trip**: form editor for stops in visit order — name, type, address with
+  **Find** (geocodes via OpenStreetMap Nominatim) or **Pick on map**, coordinates,
+  date, arrive/depart/time on site, notes; reorder or delete stops; mark any leg
+  as a flight and enter flight number, airports and times. A JSON tab exposes the
+  raw itinerary for power users.
+
+## Run it locally
 
 ```bash
 npm install
@@ -16,10 +30,12 @@ npm run build      # production bundle in dist/
 npm test           # unit tests (vitest)
 ```
 
-Optional: point routing at your own OSRM-compatible server.
+Optional environment variables:
 
 ```bash
-VITE_OSRM_URL=https://your-osrm.example.com npm run dev
+VITE_OSRM_URL=https://your-osrm.example.com      # OSRM-compatible routing server
+VITE_GEOCODER_URL=https://your-nominatim.example  # Nominatim-compatible geocoder
+VITE_BASE=/trip-planner/                          # base path for the production build (set by the Pages workflow)
 ```
 
 ## How it works
@@ -58,8 +74,9 @@ type TravelLeg = {
 };
 ```
 
-Open **Edit data** in the app to paste your own itinerary JSON; three example
-itineraries (single city, multi-state with flights, cross-country) are included.
+Open **Plan trip → JSON** to paste an itinerary directly; four example
+itineraries (a KPMG site rollout, a West Coast service run, a cross-country tour,
+and a single-city day) are included.
 
 ## Interactions
 
@@ -86,5 +103,7 @@ src/
   hooks/useResolvedLegs.ts   turns legs into drawable geometry
   components/map/            MapView (MapLibre), overlay (markers/labels), layers, legend, leg card
   components/panel/          itinerary sidebar
-  components/                header, data editor, App
+  store/trips.ts             trip library (localStorage)
+  components/TripEditor.tsx  form + JSON trip editor with geocoding and map picking
+  components/                header (trip switcher, basemap, export), App
 ```

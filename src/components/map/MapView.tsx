@@ -27,6 +27,9 @@ interface Props {
   onHoverStop: (id: string | null) => void;
   onSelectLeg: (id: string | null) => void;
   onMapReady: (map: maplibregl.Map, container: HTMLDivElement) => void;
+  /** When set, the next map click reports a location instead of selecting. */
+  picking: boolean;
+  onPick: (lngLat: LngLat) => void;
   children?: React.ReactNode;
 }
 
@@ -64,6 +67,8 @@ export function MapView({
   onHoverStop,
   onSelectLeg,
   onMapReady,
+  picking,
+  onPick,
   children,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -75,8 +80,8 @@ export function MapView({
   const geojsonRef = useRef(geojson);
   geojsonRef.current = geojson;
 
-  const handlersRef = useRef({ onSelectStop, onSelectLeg });
-  handlersRef.current = { onSelectStop, onSelectLeg };
+  const handlersRef = useRef({ onSelectStop, onSelectLeg, onPick, picking });
+  handlersRef.current = { onSelectStop, onSelectLeg, onPick, picking };
 
   // Create the map once.
   useEffect(() => {
@@ -109,6 +114,10 @@ export function MapView({
 
     // Route interactions
     const onClick = (e: maplibregl.MapMouseEvent) => {
+      if (handlersRef.current.picking) {
+        handlersRef.current.onPick([e.lngLat.lng, e.lngLat.lat]);
+        return;
+      }
       const hit = m
         .queryRenderedFeatures(e.point, { layers: INTERACTIVE_LAYERS.filter((id) => !!m.getLayer(id)) })
         .find((f) => f.properties?.id);
@@ -120,6 +129,10 @@ export function MapView({
     };
     m.on('click', onClick);
     const onMove = (e: maplibregl.MapMouseEvent) => {
+      if (handlersRef.current.picking) {
+        m.getCanvas().style.cursor = 'crosshair';
+        return;
+      }
       const layers = INTERACTIVE_LAYERS.filter((id) => !!m.getLayer(id));
       if (!layers.length) return;
       const hit = m.queryRenderedFeatures(e.point, { layers });
@@ -196,8 +209,13 @@ export function MapView({
 
   const stops = useMemo(() => orderedStops(itinerary), [itinerary]);
 
+  useEffect(() => {
+    if (!map) return;
+    map.getCanvas().style.cursor = picking ? 'crosshair' : '';
+  }, [map, picking]);
+
   return (
-    <div className="map-frame" ref={containerRef}>
+    <div className={`map-frame ${picking ? 'map-frame--picking' : ''}`} ref={containerRef}>
       <div className="map-frame__canvas" ref={canvasHostRef} />
       {map && (
         <MapOverlay

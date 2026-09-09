@@ -1,37 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle } from 'lucide-react';
-import type { Itinerary } from '@/types/itinerary';
-import { kpmgRollout } from '@/data/sampleItineraries';
+import type { Itinerary, LngLat } from '@/types/itinerary';
 import { useResolvedLegs } from '@/hooks/useResolvedLegs';
+import { useTrips } from '@/store/trips';
+import { parseItineraryJSON } from '@/lib/validation';
+import { safeFilename } from '@/services/export';
 import { DEFAULT_BASEMAP, type BasemapId } from '@/services/basemaps';
 import { exportPdf, exportPng } from '@/services/export';
 import { Header } from '@/components/Header';
-import { DataEditor } from '@/components/DataEditor';
+import { TripEditor, type PickRequest } from '@/components/TripEditor';
 import { MapView, type FocusRequest } from '@/components/map/MapView';
 import { MapLegend } from '@/components/map/MapLegend';
 import { LegDetailCard } from '@/components/map/LegDetailCard';
 import { ItineraryPanel } from '@/components/panel/ItineraryPanel';
 
-const STORAGE_KEY = 'itinerary-map:itinerary';
-
-function loadInitialItinerary(): Itinerary {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as Itinerary;
-  } catch {
-    /* ignore */
-  }
-  return kpmgRollout;
-}
-
 export default function App() {
-  const [itinerary, setItinerary] = useState<Itinerary>(loadInitialItinerary);
+  const trips = useTrips();
+  const itinerary = trips.current;
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP);
   const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
   const [hoveredStopId, setHoveredStopId] = useState<string | null>(null);
   const [selectedLegId, setSelectedLegId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [picking, setPicking] = useState<PickRequest | null>(null);
+  const [picked, setPicked] = useState<{ stopId: string; lngLat: LngLat; token: number } | null>(null);
   const [fitToken, setFitToken] = useState(0);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -41,25 +34,76 @@ export default function App() {
   const { legs, routingPending, routingFailed, retryFailed } = useResolvedLegs(itinerary);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(itinerary));
-    } catch {
-      /* ignore */
-    }
-  }, [itinerary]);
-
-  useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(t);
   }, [toast]);
 
-  const applyItinerary = useCallback((next: Itinerary) => {
-    setItinerary(next);
+  const resetSelection = useCallback(() => {
     setSelectedStopId(null);
     setSelectedLegId(null);
     setHoveredStopId(null);
   }, []);
+
+  const applyItinerary = useCallback(
+    (next: Itinerary) => {
+      trips.upsert(next);
+      resetSelection();
+    },
+    [trips, resetSelection],
+  );
+
+  const selectTrip = useCallback(
+    (id: string) => {
+      trips.setCurrent(id);
+      resetSelection();
+    },
+    [trips, resetSelection],
+  );
+
+  const newTrip = useCallback(() => {
+    trips.create();
+    resetSelection();
+    setEditorOpen(true);
+  }, [trips, resetSelection]);
+
+  const deleteTrip = useCallback(() => {
+    if (!window.confirm(`Delete "${itinerary.title}"? This cannot be undone.`)) return;
+    trips.remove(itinerary.id);
+    resetSelection();
+  }, [trips, itinerary, resetSelection]);
+
+  const importTrip = useCallback(
+    async (file: File) => {
+      const r = parseItineraryJSON(await file.text());
+      if (!r.ok) {
+        setToast(`Import failed: ${r.errors[0]}`);
+        return;
+      }
+      const exists = trips.trips.some((t) => t.id === r.itinerary.id);
+      applyItinerary(exists ? { ...r.itinerary, id: `${r.itinerary.id}-${Date.now().toString(36)}` } : r.itinerary);
+    },
+    [trips, applyItinerary],
+  );
+
+  const exportTripJson = useCallback(() => {
+    const blob = new Blob([JSON.stringify(itinerary, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeFilename(itinerary.title)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [itinerary]);
+
+  const onPick = useCallback(
+    (lngLat: LngLat) => {
+      if (!picking) return;
+      setPicked({ stopId: picking.stopId, lngLat, token: Date.now() });
+      setPicking(null);
+    },
+    [picking],
+  );
 
   /** Select from the map: highlight + sync the panel (no camera move). */
   const selectStopFromMap = useCallback((id: string | null) => {
@@ -110,8 +154,18 @@ export default function App() {
       <div className="app__header">
         <Header
           itinerary={itinerary}
+          trips={trips.trips}
           basemap={basemap}
           exporting={exporting}
+          onSelectTrip={selectTrip}
+          onNewTrip={newTrip}
+          onDuplicateTrip={() => {
+            trips.duplicate(itinerary.id);
+            resetSelection();
+          }}
+          onDeleteTrip={deleteTrip}
+          onImportTrip={importTrip}
+          onExportTripJson={exportTripJson}
           onBasemapChange={setBasemap}
           onFit={() => setFitToken((t) => t + 1)}
           onExportPng={() => runExport('png')}
@@ -136,6 +190,8 @@ export default function App() {
           onMapReady={(map, container) => {
             mapRef.current = { map, container };
           }}
+          picking={picking !== null}
+          onPick={onPick}
         >
           <div className="map-chrome map-chrome--top-left">
             {routingPending > 0 && (
@@ -183,7 +239,18 @@ export default function App() {
       </div>
 
       {editorOpen && (
-        <DataEditor itinerary={itinerary} onApply={applyItinerary} onClose={() => setEditorOpen(false)} />
+        <TripEditor
+          key={itinerary.id}
+          itinerary={itinerary}
+          picked={picked}
+          picking={picking}
+          onRequestPick={setPicking}
+          onSave={applyItinerary}
+          onClose={() => {
+            setEditorOpen(false);
+            setPicking(null);
+          }}
+        />
       )}
     </div>
   );
